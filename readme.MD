@@ -4,9 +4,10 @@
 ##Install:
 
 # do the stuff to make the stream allow for the webgl things to happen...
-sudo cp mjpeg_streamer.hpp /home/pi/cpp-mjpeg-streamer/include/nadjieb/net/<br>
-sudo cp publisher.hpp /home/pi/cpp-mjpeg-streamer/include/nadjieb/<br>
-sudo install --group=root --owner=root /home/pi/cpp-mjpeg-streamer/include/nadjieb /usr/local/include/nadjieb<br>
+sudo cp mjpeg_streamer.hpp /home/pi/cpp-mjpeg-streamer/include/nadjieb/<br>
+sudo cp publisher.hpp /home/pi/cpp-mjpeg-streamer/include/nadjieb/net/<br>
+sudo rm -rf /usr/local/include/nadjieb<br>
+sudo cp -r /home/pi/cpp-mjpeg-streamer/include/nadjieb /usr/local/include/nadjieb<br>
 
 # add proper handling so that the template does false color
 sudo cp eventemitter2.js /home/pi/cinemate/src/module/app/static/js/<br>
