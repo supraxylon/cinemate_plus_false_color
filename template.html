@@ -96,6 +96,10 @@
                 <option value="none">None</option>
                 <option value="falseColor1">False Color 1</option>
                 <option value="falseColor2">False Color 2</option>
+                <option value="falseColorExposure">False Exposure</option>
+                <option value="falseColorGradient">Color Gradient</option>
+                <option value="falseColorSkinTone">false Color SkinTone</option>
+                <option value="falseColorHeatmap">Color Heatmap</option>
                 <!-- Add more options as needed -->
             </select>
         </div>        
@@ -401,6 +405,97 @@
                     gl_FragColor = vec4(1.0 - color.r, color.g, color.b, 1.0);
                 }
             `,
+            'falseColorExposure': `
+                precision mediump float;
+                varying vec2 v_texCoord;
+                uniform sampler2D u_image;
+
+                void main() {
+                    vec4 color = texture2D(u_image, v_texCoord);
+                    float luminance = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
+
+                    if (luminance < 0.2) {
+                        // Underexposed areas - map to blue
+                        gl_FragColor = vec4(0.0, 0.0, 1.0, 1.0);
+                    } else if (luminance > 0.8) {
+                        // Overexposed areas - map to red
+                        gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0);
+                    } else {
+                        // Properly exposed areas - map to green
+                        gl_FragColor = vec4(0.0, 1.0, 0.0, 1.0);
+                    }
+                }
+            `,
+            'falseColorGradient': `
+                precision mediump float;
+                varying vec2 v_texCoord;
+                uniform sampler2D u_image;
+
+                vec3 falseColor(float value) {
+                    // Map value [0.0, 1.0] to colors from blue to red
+                    return clamp(
+                        (1.0 - value) * vec3(0.0, 0.0, 1.0) + value * vec3(1.0, 0.0, 0.0),
+                        0.0,
+                        1.0
+                    );
+                }
+
+                void main() {
+                    vec4 color = texture2D(u_image, v_texCoord);
+                    float luminance = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
+                    vec3 fcColor = falseColor(luminance);
+                    gl_FragColor = vec4(fcColor, 1.0);
+                }
+            `,
+            'falseColorSkinTone': `
+                precision mediump float;
+                varying vec2 v_texCoord;
+                uniform sampler2D u_image;
+
+                vec3 rgb2hsv(vec3 c) {
+                    vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+                    vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+                    vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+                    float d = q.x - min(q.w, q.y);
+                    float e = 1.0e-10;
+                    return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + e)), d / (q.x + e), q.x);
+                }
+
+                void main() {
+                    vec4 color = texture2D(u_image, v_texCoord);
+                    vec3 hsv = rgb2hsv(color.rgb);
+
+                    // Skin tone hue range roughly between 0° to 50° (0.0 to 0.14 in normalized HSV)
+                    if (hsv.x >= 0.0 && hsv.x <= 0.14 && hsv.y > 0.2 && hsv.z > 0.2) {
+                        // Highlight skin tones with a distinct color (e.g., magenta)
+                        gl_FragColor = vec4(1.0, 0.0, 1.0, 1.0);
+                    } else {
+                        // Desaturate non-skin regions
+                        float gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+                        gl_FragColor = vec4(vec3(gray), 1.0);
+                    }
+                }
+            `,
+            'falseColorHeatmap': `
+                precision mediump float;
+                varying vec2 v_texCoord;
+                uniform sampler2D u_image;
+
+                vec3 falseColor(float value) {
+                    float r = clamp(4.0 * value - 1.5, 0.0, 1.0);
+                    float g = clamp(4.0 * value - 0.5, 0.0, 1.0);
+                    float b = clamp(4.0 * value + 0.5, 0.0, 1.0);
+                    return vec3(r, g, b);
+                }
+
+                void main() {
+                    vec4 color = texture2D(u_image, v_texCoord);
+                    float luminance = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
+                    vec3 fcColor = falseColor(luminance);
+                    gl_FragColor = vec4(fcColor, 1.0);
+                }
+            `,
+
             // Add more shaders as needed
         };
 
