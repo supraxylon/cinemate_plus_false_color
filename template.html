@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MJPEG Stream with Overlay</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: 'Arial', sans-serif;
+            background-color: {{ background_color }};
+        }
+        .top-bar, .bottom-bar {
+            background-color: black;
+            font-size: 16px;
+            color: #fff;
+            padding: 10px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .top-bar select, .bottom-bar select {
+            margin-left: 10px;
+            padding: 8px;
+            font-size: 16px;
+            border: none;
+            background-color: #111;
+            color: #fff;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        .top-bar select:focus, .bottom-bar select:focus {
+            outline: none;
+        }
+        #stream-container {
+            background-color: black;
+            position: relative;
+            width: 100%;
+            height: 100%;
+            padding-bottom: 46.25%;
+            overflow: hidden;
+            margin: 0;
+        }
+        #stream {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background-color: black;
+        }
+        #stream-canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: black;
+        }
+    </style>
+</head>
+<body>
+    <div class="top-bar">
+        <div>ISO:
+            <select id="iso-select">
+                {% for iso_value in iso_values %}
+                    <option value="{{ iso_value }}" {% if iso_value == current_iso %}selected{% endif %}>{{ iso_value }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>Shutter Angle:
+            <select id="shutter-speed-select">
+                {% for shutter_speed_value in shutter_speed_values %}
+                    <option value="{{ shutter_speed_value }}" {% if shutter_speed_value == current_shutter_a %}selected{% endif %}>{{ shutter_speed_value }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>FPS:
+            <select id="fps-select">
+                {% for fps_value in fps_values %}
+                    <option value="{{ fps_value }}" {% if fps_value == current_fps %}selected{% endif %}>{{ fps_value }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>WB:
+            <select id="wb-select">
+                {% for wb_value in wb_steps %}
+                    <option value="{{ wb_value }}" {% if wb_value == current_wb %}selected{% endif %}>{{ wb_value }}K</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>False Color:
+            <select id="false-color-select">
+                <option value="none">None</option>
+                <option value="falseColor1">False Color 1</option>
+                <option value="falseColor2">False Color 2</option>
+                <!-- Add more options as needed -->
+            </select>
+        </div>        
+    </div>
+    <div id="stream-container">
+        <canvas id="stream-canvas"></canvas>
+    </div>
+    <div id="mjpeg-stream-container" style="display: none;"></div>
+    <div class="bottom-bar">
+        <div><span id="disk-space"></span></div>
+        <button id="unmount-btn">Unmount</button>
+        <div>CPU: <span id="cpu-load"></span></div>
+        <div>RAM: <span id="ram-load"></span></div>
+        <div>TEMP: <span id="cpu-temp"></span></div>
+        <div><span id="current-sensor"></span>
+            <select id="resolution-select">
+                {% for resolution in resolution_values %}
+                    <option value="{{ resolution.mode }}">{{ resolution.width }}x{{ resolution.height }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div><span id="framecount"></span></div>
+        <div> <span id="buffer"></span></div>
+        <button id="fullscreen-btn">Enter Fullscreen</button>
+    </div>
+    <script src="{{ url_for('static', filename='js/socket.io.min.js') }}"></script>
+    <!-- 
+    <script src="https://cdn.socket.io/4.8.0/socket.io.min.js"></script>-->
+    <script>
+        const socket = io();
+
+        function updateShutterSpeedOptions(shutter_a_steps, current_shutter_a) {
+            const shutterSpeedSelect = document.getElementById('shutter-speed-select');
+            shutterSpeedSelect.innerHTML = '';
+            shutter_a_steps.forEach(angle => {
+                const option = document.createElement('option');
+                option.value = angle;
+                option.textContent = angle;
+                if (angle == current_shutter_a) {
+                    option.selected = true;
+                }
+                shutterSpeedSelect.appendChild(option);
+            });
+        }
+
+        function updateFpsOptions(fps_steps, current_fps) {
+            const fpsSelect = document.getElementById('fps-select');
+            fpsSelect.innerHTML = '';
+            fps_steps.forEach(fps => {
+                const option = document.createElement('option');
+                option.value = fps;
+                option.textContent = fps;
+                if (fps == current_fps) {
+                    option.selected = true;
+                }
+                fpsSelect.appendChild(option);
+            });
+        }
+
+        function updateWBOptions(wb_steps, current_wb) {
+            const wbSelect = document.getElementById('wb-select');
+            wbSelect.innerHTML = '';
+            wb_steps.forEach(wb => {
+                const option = document.createElement('option');
+                option.value = wb;
+                option.textContent = `${wb}K`;
+                if (wb == current_wb) {
+                    option.selected = true;
+                }
+                wbSelect.appendChild(option);
+            });
+        }
+
+        socket.on('initial_values', data => {
+            document.getElementById('iso-select').value = data.iso;
+            updateShutterSpeedOptions(data.shutter_a_steps, data.shutter_a);
+            updateFpsOptions(data.fps_steps, data.fps);
+            updateWBOptions(data.wb_steps, data.wb);
+
+            document.body.style.backgroundColor = data.background_color;
+            document.getElementById('disk-space').innerText = data.disk_space;
+            document.getElementById('cpu-load').innerText = data.cpu_load;
+            document.getElementById('ram-load').innerText = data.ram_load;
+            document.getElementById('cpu-temp').innerText = data.cpu_temp;
+
+            document.getElementById('framecount').innerText = data.framecount;
+            document.getElementById('buffer').innerText = data.buffer;
+
+            document.getElementById('current-sensor').innerText = data.current_sensor;
+            const resolutionSelect = document.getElementById('resolution-select');
+            resolutionSelect.innerHTML = '';
+            data.sensor_resolutions.forEach(res => {
+                const option = document.createElement('option');
+                option.value = res.mode;
+                option.textContent = res.resolution;
+                resolutionSelect.appendChild(option);
+            });
+            resolutionSelect.value = data.selected_resolution_mode;
+        });
+
+        socket.on('parameter_change', data => {
+            if (data.iso !== undefined) {
+                document.getElementById('iso-select').value = data.iso;
+            }
+            if (data.shutter_a !== undefined) {
+                const currentShutter = data.shutter_a;
+                document.getElementById('shutter-speed-select').value = currentShutter;
+                socket.emit('request_shutter_a_steps', {}, (response) => {
+                    updateShutterSpeedOptions(response.shutter_a_steps, currentShutter);
+                });
+            }
+            if (data.fps !== undefined) {
+                document.getElementById('fps-select').value = data.fps;
+            }
+            if (data.wb !== undefined) {
+                document.getElementById('wb-select').value = data.wb;
+            }
+            if (data.framebuffer !== undefined) {
+                document.getElementById('framebuffer').value = data.framebuffer;
+            }   
+        });
+
+        socket.on('shutter_a_update', data => {
+            updateShutterSpeedOptions(data.shutter_a_steps, data.current_shutter_a);
+        });
+
+        socket.on('fps_update', data => {
+            updateFpsOptions(data.fps_steps, data.fps_actual);
+        });
+
+        socket.on('gui_data_change', data => {
+            if (data.disk_space !== undefined) {
+                document.getElementById('disk-space').innerText = data.disk_space;
+            }
+            if (data.cpu_load !== undefined) {
+                document.getElementById('cpu-load').innerText = data.cpu_load;
+            }
+            if (data.ram_load !== undefined) {
+                document.getElementById('ram-load').innerText = data.ram_load;
+            }
+        });
+
+        socket.on('background_color_change', data => {
+            updateBackgroundColor(data.background_color);
+        });
+
+        function updateBackgroundColor(color) {
+            document.body.style.backgroundColor = color;
+            const elementsToChange = document.querySelectorAll('*:not(button)');
+            elementsToChange.forEach(element => {
+                element.style.backgroundColor = color;
+            });
+        }
+
+        document.getElementById('iso-select').addEventListener('change', function() {
+            const iso = this.value;
+            socket.emit('change_iso', { iso });
+        });
+
+        document.getElementById('shutter-speed-select').addEventListener('change', function() {
+            const shutterAngle = this.value;
+            socket.emit('change_shutter_a', { shutter_a: shutterAngle });
+        });
+
+        document.getElementById('fps-select').addEventListener('change', function() {
+            const fps = this.value;
+            socket.emit('change_fps', { fps });
+        });
+
+        document.getElementById('wb-select').addEventListener('change', function() {
+            const wb = this.value;
+            socket.emit('change_wb', { wb });
+        });
+
+        document.getElementById('resolution-select').addEventListener('change', function() {
+            const resolutionMode = this.value;
+            socket.emit('change_resolution', { mode: resolutionMode });
+        });
+
+        document.getElementById('unmount-btn').addEventListener('click', function() {
+            socket.emit('unmount');
+        });
+
+        document.getElementById('stream-container').addEventListener('click', function() {
+            socket.emit('container_tap');
+        });
+
+        socket.on('reload_stream', () => {
+            reloadStream();
+        });
+
+        function reloadStream() {
+            const streamElement = document.getElementById('stream');
+            const currentSrc = streamElement.src;
+            streamElement.src = '';
+            setTimeout(() => {
+                streamElement.src = currentSrc;
+            }, 2000);
+        }
+
+        socket.on('reload_browser', () => {
+            window.location.reload();
+        });
+
+        function toggleFullScreen() {
+            const elem = document.documentElement;
+            if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+                if (elem.requestFullscreen) {
+                    elem.requestFullscreen();
+                } else if (elem.webkitRequestFullscreen) {
+                    elem.webkitRequestFullscreen();
+                }
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                } else if (document.webkitExitFullscreen) {
+                    document.webkitExitFullscreen();
+                }
+            }
+        }
+
+        document.getElementById('fullscreen-btn').addEventListener('click', function() {
+            toggleFullScreen();
+            updateFullscreenButton();
+        });
+
+        function updateFullscreenButton() {
+            const isInFullScreen = document.fullscreenElement !== null || document.webkitFullscreenElement !== null;
+            document.getElementById('fullscreen-btn').textContent = isInFullScreen ? 'Exit Fullscreen' : 'Enter Fullscreen';
+        }
+
+        document.getElementById('fullscreen-btn').addEventListener('touchstart', function(event) {
+            event.preventDefault();
+            toggleFullScreen();
+            updateFullscreenButton();
+        });
+    </script>
+    <!--<script src="https://unpkg.com/mjpegcanvasjs@1.0.6/mjpegcanvas.js"></script>-->
+    <script src="{{ url_for('static', filename='js/eventemitter2.js') }}"></script>
+    <script src="{{ url_for('static', filename='js/mjpegcanvas.js') }}"></script>
+    <script>
+        // verify that it is loaded correctly
+        console.log('MJPEGCANVAS:', MJPEGCANVAS);
+        // Get references to the canvas and the false color select dropdown
+        const canvas = document.getElementById('stream-canvas');
+        const falseColorSelect = document.getElementById('false-color-select');
+
+        // Initialize WebGL context
+        const gl = canvas.getContext('webgl') || canvas.getContext('experimental-webgl');
+        if (!gl) {
+            alert('WebGL not supported in your browser.');
+        }
+
+        // Resize canvas to match display size
+        function resizeCanvas() {
+            canvas.width = canvas.clientWidth;
+            canvas.height = canvas.clientHeight;
+        }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        // Vertex shader source (common for all shaders)
+        const vertexShaderSource = `
+            attribute vec2 a_position;
+            attribute vec2 a_texCoord;
+            varying vec2 v_texCoord;
+
+            void main() {
+                gl_Position = vec4(a_position, 0, 1);
+                v_texCoord = a_texCoord;
+            }
+        `;
+
+        // Fragment shader sources for different effects
+        const fragmentShaderSources = {
+            'none': `
+                precision mediump float;
+                varying vec2 v_texCoord;
+                uniform sampler2D u_image;
+
+                void main() {
+                    gl_FragColor = texture2D(u_image, v_texCoord);
+                }
+            `,
+            'falseColor1': `
+                precision mediump float;
+                varying vec2 v_texCoord;
+                uniform sampler2D u_image;
+
+                void main() {
+                    vec4 color = texture2D(u_image, v_texCoord);
+                    float gray = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+                    gl_FragColor = vec4(gray, 1.0 - gray, 0.0, 1.0);
+                }
+            `,
+            'falseColor2': `
+                precision mediump float;
+                varying vec2 v_texCoord;
+                uniform sampler2D u_image;
+
+                void main() {
+                    vec4 color = texture2D(u_image, v_texCoord);
+                    gl_FragColor = vec4(1.0 - color.r, color.g, color.b, 1.0);
+                }
+            `,
+            // Add more shaders as needed
+        };
+
+        // Initialize shader programs
+        let shaderPrograms = {};
+        let currentShaderProgram;
+
+        function initShaderPrograms() {
+            for (let key in fragmentShaderSources) {
+                const fsSource = fragmentShaderSources[key];
+                const program = createShaderProgram(vertexShaderSource, fsSource);
+                if (program) {
+                    shaderPrograms[key] = program;
+                }
+            }
+            currentShaderProgram = shaderPrograms['none']; // Default shader
+        }
+
+        // Compile and link shaders into a program
+        function createShaderProgram(vsSource, fsSource) {
+            const vertexShader = compileShader(gl.VERTEX_SHADER, vsSource);
+            const fragmentShader = compileShader(gl.FRAGMENT_SHADER, fsSource);
+
+            const shaderProgram = gl.createProgram();
+            gl.attachShader(shaderProgram, vertexShader);
+            gl.attachShader(shaderProgram, fragmentShader);
+            gl.linkProgram(shaderProgram);
+
+            if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+                console.error('Unable to initialize the shader program:', gl.getProgramInfoLog(shaderProgram));
+                return null;
+            }
+            return shaderProgram;
+        }
+
+        // Compile individual shader
+        function compileShader(type, source) {
+            const shader = gl.createShader(type);
+            gl.shaderSource(shader, source);
+            gl.compileShader(shader);
+
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                console.error('An error occurred compiling the shaders:', gl.getShaderInfoLog(shader));
+                gl.deleteShader(shader);
+                return null;
+            }
+            return shader;
+        }
+
+        initShaderPrograms();
+
+        // Set up buffers and attributes
+        const positionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+        const positions = [
+            -1, -1, // Bottom-left
+            1, -1, // Bottom-right
+            -1,  1, // Top-left
+            1,  1, // Top-right
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
+
+        const texCoordBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+        const texCoords = [
+            0, 1, // Bottom-left
+            1, 1, // Bottom-right
+            0, 0, // Top-left
+            1, 0, // Top-right
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(texCoords), gl.STATIC_DRAW);
+
+        // Create a texture to hold the MJPEG frames
+        const videoTexture = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, videoTexture);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); // Prevents s-coordinate wrapping (repeating).
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE); // Prevents t-coordinate wrapping (repeating).
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);    // Linear filtering.
+
+        // Initialize the MJPEG viewer
+        const mjpegViewer = new MJPEGCANVAS.Viewer({
+            divID: 'mjpeg-stream-container',
+            width: canvas.width,
+            height: canvas.height,
+            url: 'http://cinepi.local:8000/stream', // Provide the full URL
+            // Optional parameters:
+            // refreshRate: 10,
+            // invert: false,
+        });
+
+        // Access the canvas created by MJPEGCANVAS.Viewer
+        const mjpegCanvasElement = mjpegViewer.canvas;
+
+        // Function to draw the frame
+        function drawFrame() {
+            // Update the texture with the MJPEG canvas content
+            gl.bindTexture(gl.TEXTURE_2D, videoTexture);
+            gl.texImage2D(
+                gl.TEXTURE_2D,
+                0,
+                gl.RGBA,
+                gl.RGBA,
+                gl.UNSIGNED_BYTE,
+                mjpegCanvasElement
+            );
+
+            // Clear the canvas
+            gl.viewport(0, 0, canvas.width, canvas.height);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+
+            // Use the current shader program
+            gl.useProgram(currentShaderProgram);
+
+            // Set up the position attribute
+            const positionLocation = gl.getAttribLocation(currentShaderProgram, 'a_position');
+            gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
+            gl.enableVertexAttribArray(positionLocation);
+            gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+            // Set up the texture coordinate attribute
+            const texCoordLocation = gl.getAttribLocation(currentShaderProgram, 'a_texCoord');
+            gl.bindBuffer(gl.ARRAY_BUFFER, texCoordBuffer);
+            gl.enableVertexAttribArray(texCoordLocation);
+            gl.vertexAttribPointer(texCoordLocation, 2, gl.FLOAT, false, 0, 0);
+
+            // Set the texture uniform
+            const samplerLocation = gl.getUniformLocation(currentShaderProgram, 'u_image');
+            gl.uniform1i(samplerLocation, 0); // Texture unit 0
+
+            // Draw the rectangle
+            gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+            // Request the next frame
+            requestAnimationFrame(drawFrame);
+        }
+
+        // Start drawing frames
+        drawFrame();
+
+        // Event listener for false color selection
+        falseColorSelect.addEventListener('change', function() {
+            const selectedEffect = this.value;
+            currentShaderProgram = shaderPrograms[selectedEffect];
+        });
+    </script>
+</body>
+</html>
