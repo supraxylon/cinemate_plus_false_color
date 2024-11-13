@@ -16,7 +16,7 @@ sudo cp template.html /home/pi/cinemate/src/module/app/templates/<br>
 
 # recompile and reinstall cinepi
 cd ~/cinepi-raw/<br>
-rm -rf build<br>
-meson setup build<br>
-meson compile -C build<br>
+sudo rm -rf build<br>
+sudo meson setup build<br>
+sudo meson compile -C build<br>
 sudo install --group=root --owner=root ~/cinepi-raw/build/cinepi/cinepi-raw "/usr/local/bin/cinepi-raw"<br>
