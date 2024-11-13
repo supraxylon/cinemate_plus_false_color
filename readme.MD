@@ -1,3 +1,8 @@
+![exampleimage](https://i.imgur.com/5hJiNmt.png)
+
+
+##Install:
+
 # do the stuff to make the stream allow for the webgl things to happen...
 sudo cp mjpeg_streamer.hpp /home/pi/cpp-mjpeg-streamer/include/nadjieb/net/<br>
 sudo cp publisher.hpp /home/pi/cpp-mjpeg-streamer/include/nadjieb/<br>
